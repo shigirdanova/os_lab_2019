@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include "stdlib.h"
 #include <string.h>
-#include "revert_string.h"
+#include "static_rev.h"
 
 
 int main(int argc, char* argv[])
