@@ -39,25 +39,19 @@ int main(int argc, char **argv) {
       case 0:
         switch (option_index) {
           case 0:
-            seed = atoi(optarg);
-            // your code here
-            // error handling
+            seed = atoi(optarg);       
             break;
           case 1:
             array_size = atoi(optarg);
-            // your code here
-            // error handling
             break;
           case 2:
             pnum = atoi(optarg);
-            // your code here
-            // error handling
             break;
           case 3:
             with_files = true;
             break;
 
-          defalut:
+          default:
             printf("Index %d is out of options\n", option_index);
         }
         break;
@@ -87,28 +81,48 @@ int main(int argc, char **argv) {
   int *array = malloc(sizeof(int) * array_size);
   GenerateArray(array, array_size, seed);
   int active_child_processes = 0;
+  int active_array_step = pnum < array_size ? (array_size / pnum) : 1;
 
   struct timeval start_time;
   gettimeofday(&start_time, NULL);
-
-  for (int i = 0; i < pnum; i++) {
+  int pipefd[2];
+  if (with_files) {
+    FILE *shared_file;
+    shared_file = fopen("lab3.txt", "w+");
+    fprintf(shared_file, "");
+    fclose(shared_file);
+  } else {
+    if (pipe(pipefd) == -1) {
+      perror("\nERROR CREATE PIPE!\n");
+      exit(EXIT_FAILURE);
+    }
+  }
+  int i;
+  for (i = 0; i < pnum; i++) {
     pid_t child_pid = fork();
     if (child_pid >= 0) {
       // successful fork
       active_child_processes += 1;
       if (child_pid == 0) {
-        // child process
-
-        // parallel somehow
-
+        unsigned int start = active_array_step * (active_child_processes - 1);
+        unsigned int end = start + active_array_step;
+        start = start > array_size ? array_size : start;
+        end = end > array_size ? array_size : end;
+        if (active_child_processes == pnum)
+          end = array_size;
+        struct MinMax min_max = GetMinMax(array, start, end);
         if (with_files) {
-          // use files here
+          FILE *shared_file;
+          shared_file = fopen("lab3.txt", "a+");
+          fwrite(&min_max, sizeof(struct MinMax), 1, shared_file);
+          fclose(shared_file);
         } else {
-          // use pipe here
+          close(pipefd[0]);
+          write(pipefd[1], &min_max, sizeof(struct MinMax));
+          close(pipefd[1]);
         }
         return 0;
       }
-
     } else {
       printf("Fork failed!\n");
       return 1;
@@ -116,27 +130,39 @@ int main(int argc, char **argv) {
   }
 
   while (active_child_processes > 0) {
-    // your code here
-
+    wait(NULL);
     active_child_processes -= 1;
   }
+
+  FILE *shared_file;
+  shared_file = fopen("lab3.txt", "r");
 
   struct MinMax min_max;
   min_max.min = INT_MAX;
   min_max.max = INT_MIN;
 
-  for (int i = 0; i < pnum; i++) {
+  for (i = 0; i < pnum; i++) {
     int min = INT_MAX;
     int max = INT_MIN;
+    struct MinMax tmp_min_max;
 
     if (with_files) {
-      // read from files
+      fread(&tmp_min_max, sizeof(struct MinMax), 1, shared_file);
+      if (i == pnum - 1) 
+        fclose(shared_file);
     } else {
-      // read from pipes
+      close(pipefd[1]);
+      read(pipefd[0], &tmp_min_max, sizeof(struct MinMax));
+      close(pipefd[0]);
     }
+    min = tmp_min_max.min;
+    max = tmp_min_max.max;
 
-    if (min < min_max.min) min_max.min = min;
-    if (max > min_max.max) min_max.max = max;
+
+    if (min < min_max.min) 
+      min_max.min = min;
+    if (max > min_max.max) 
+      min_max.max = max;
   }
 
   struct timeval finish_time;
@@ -147,9 +173,9 @@ int main(int argc, char **argv) {
 
   free(array);
 
-  printf("Min: %d\n", min_max.min);
+  printf("\nMin: %d\n", min_max.min);
   printf("Max: %d\n", min_max.max);
-  printf("Elapsed time: %fms\n", elapsed_time);
+  printf("Elapsed time: %fms\n\n", elapsed_time);
   fflush(NULL);
   return 0;
 }
